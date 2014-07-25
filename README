@@ -1,0 +1,21 @@
+ICFP Contest 2014
+=================
+
+This is just an initial commit based on the simple example provided in
+the specification.
+
+http://icfpcontest.org/specification.html
+
+> To illustrate the interface, here is an AI that always goes down.
+>
+> We can see from the code that it also (pointlessly) maintains an
+> integer state (starting from 42) and increments it on every step.
+
+Building
+--------
+
+ 1. Put the content of this repository in a directory named "code".
+ 2. Copy lambdaman.gcc to a sibling directory named "solution".
+ 3. Create a .zip or .tar.gz file containing the code and solution
+    directories.
+
