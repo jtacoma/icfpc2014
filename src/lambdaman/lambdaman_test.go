@@ -2,10 +2,10 @@ package lambdaman
 
 import (
 	"bytes"
-	"go/parser"
-	"go/token"
 	"strings"
 	"testing"
+
+	"lambdaman/parser"
 )
 
 var tests = []struct {
@@ -58,15 +58,14 @@ func diff(a, b string) []string {
 }
 
 func TestCompile(t *testing.T) {
-	fset := token.NewFileSet()
 	for itest, test := range tests {
-		f, err := parser.ParseFile(fset, "src.go", test.In, 0)
+		program, err := parser.ParseFile("src.go", test.In)
 		if err != nil {
 			t.Errorf("test#%d: %s", itest, err)
 			continue
 		}
 		var buffer bytes.Buffer
-		err = Compile(f, &buffer)
+		err = program.WriteTo(&buffer)
 		if err != nil {
 			t.Errorf("test#%d: %s", itest, err)
 			continue

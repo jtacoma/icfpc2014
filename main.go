@@ -2,20 +2,18 @@ package main
 
 import (
 	"fmt"
-	"go/parser"
-	"go/token"
-	"lambdaman"
 	"os"
+
+	"lambdaman/parser"
 )
 
 func main() {
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "lambdaman.go", nil, 0)
+	program, err := parser.ParseFile("lambdaman.go", nil)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	err = lambdaman.Compile(f, os.Stdout)
+	err = program.WriteTo(os.Stdout)
 	if err != nil {
 		fmt.Println(err)
 	}
