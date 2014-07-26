@@ -90,8 +90,7 @@ func TransformGoExpr(function *ast.Function, expr gast.Expr) (err error) {
 	case *gast.Ident:
 		function.Add(expr.Name, "LD", expr.Name)
 	case *gast.CallExpr:
-		for i := len(expr.Args) - 1; i >= 0; i -= 1 {
-			arg := expr.Args[i]
+		for _, arg := range expr.Args {
 			err = TransformGoExpr(function, arg)
 			if err != nil {
 				return
