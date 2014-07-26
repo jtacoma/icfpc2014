@@ -40,20 +40,27 @@ func TransformGoFile(go_file *gast.File) (program *ast.Program, err error) {
 
 func TransformGoFunc(p *ast.Program, decl *gast.FuncDecl) (err error) {
 	function := p.NewFunction(decl.Name.Name)
-	for _, stmt := range decl.Body.List {
-		switch stmt := stmt.(type) {
-		case *gast.ReturnStmt:
-			TransformGoReturn(function, stmt)
+	for _, param := range decl.Type.Params.List {
+		for _, ident := range param.Names {
+			function.Args.Data = append(function.Args.Data,
+				ast.Datum{Name: ident.Name})
 		}
 	}
-	return
-}
-
-func TransformGoReturn(f *ast.Function, stmt *gast.ReturnStmt) (err error) {
-	for _, expr := range stmt.Results {
-		err = TransformGoExpr(f, expr)
-		if err != nil {
-			return
+	for _, stmt := range decl.Body.List {
+		switch stmt := stmt.(type) {
+		case *gast.ExprStmt:
+			err = TransformGoExpr(function, stmt.X)
+			if err != nil {
+				return
+			}
+		case *gast.ReturnStmt:
+			for _, expr := range stmt.Results {
+				err = TransformGoExpr(function, expr)
+				if err != nil {
+					return
+				}
+			}
+			function.Add("", "RTN")
 		}
 	}
 	return
@@ -61,13 +68,27 @@ func TransformGoReturn(f *ast.Function, stmt *gast.ReturnStmt) (err error) {
 
 func TransformGoExpr(function *ast.Function, expr gast.Expr) (err error) {
 	switch expr := expr.(type) {
+	case *gast.BasicLit:
+		function.Add("", "LDC", expr.Value)
 	case *gast.BinaryExpr:
-		function.Add("LDC", expr.X.(*gast.BasicLit).Value)
-		function.Add("LDC", expr.Y.(*gast.BasicLit).Value)
+		TransformGoExpr(function, expr.Y)
+		TransformGoExpr(function, expr.X)
 		switch expr.Op {
 		case gtoken.ADD:
-			function.Add("ADD")
+			function.Add("", "ADD")
 		}
+	case *gast.Ident:
+		err = function.ResolveSymbol(expr.Name)
+	case *gast.CallExpr:
+		for i := len(expr.Args) - 1; i >= 0; i -= 1 {
+			arg := expr.Args[i]
+			err = TransformGoExpr(function, arg)
+			if err != nil {
+				return
+			}
+		}
+		err = TransformGoExpr(function, expr.Fun)
+		function.Add("", "AP", len(expr.Args))
 	}
 	return
 }

@@ -21,10 +21,42 @@ func main() int {
 `,
 		Out: `
 ; program: lambdaman
+LDF 3 ; load main
+AP 0
+RTN
 ; main
 LDC 21
 LDC 21
 ADD
+RTN
+`,
+	}, {
+		In: `
+package lambdaman
+func main(addtwo func (int, int) int) int {
+	return addtwo(21, 21)
+}
+func addtwo(a, b int) int {
+	return a + b
+}
+`,
+		Out: `
+; program: lambdaman
+LDF 9 ; load addtwo
+LDF 4 ; load main
+AP 1
+RTN
+; main
+LDC 21
+LDC 21
+LD 0 0 ; addtwo
+AP 2
+RTN
+; addtwo
+LD 0 1 ; b
+LD 0 0 ; a
+ADD
+RTN
 `,
 	},
 }
@@ -73,7 +105,7 @@ func TestCompile(t *testing.T) {
 		a := strings.TrimSpace(test.Out)
 		b := strings.TrimSpace(buffer.String())
 		for _, delta := range diff(a, b) {
-			t.Errorf("test#%d: %s", itest, delta)
+			t.Errorf("test#%d: %q", itest, delta)
 		}
 	}
 }
