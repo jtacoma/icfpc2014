@@ -1,11 +1,11 @@
 package lambdaman
 
-import (
-	"ghc"
-)
-
 func main() int {
-	return addtwo(10, 32)
+	return arithmetic(1, 2, 3)
+}
+
+func arithmetic(a, b, c int) int {
+	return addtwo(a, b) * c
 }
 
 func addtwo(a, b int) int {

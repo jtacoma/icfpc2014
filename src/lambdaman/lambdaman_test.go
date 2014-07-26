@@ -35,7 +35,10 @@ RTN
 		In: `
 package lambdaman
 func main() int {
-	return addtwo(21, 21)
+	return arithmetic(1, 2, 3)
+}
+func arithmetic(a, b, c int) int {
+	return addtwo(a, b) * c
 }
 func addtwo(a, b int) int {
 	return a + b
@@ -43,22 +46,33 @@ func addtwo(a, b int) int {
 `,
 		Out: `
 ; program: lambdaman
-DUM 1  ; top-level declarations
-LDF 10 ; load addtwo
-LDF 5  ; load main
-RAP 1
+DUM 2  ; top-level declarations
+LDF 12 ; load arithmetic
+LDF 19 ; load addtwo
+LDF 6  ; load main
+RAP 2
 RTN
 
 ; main
-LDC 21
-LDC 21
-LD 0 0 ; addtwo
+LDC 1
+LDC 2
+LDC 3
+LD 0 0 ; arithmetic
+AP 3
+RTN
+
+; arithmetic
+LD 0 0 ; a
+LD 0 1 ; b
+LD 1 1 ; addtwo
 AP 2
+LD 0 2 ; c
+MUL
 RTN
 
 ; addtwo
-LD 0 1 ; b
 LD 0 0 ; a
+LD 0 1 ; b
 ADD
 RTN
 `,

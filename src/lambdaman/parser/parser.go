@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"errors"
 	gast "go/ast"
 	gparser "go/parser"
 	gtoken "go/token"
@@ -81,11 +82,55 @@ func TransformGoExpr(function *ast.Function, expr gast.Expr) (err error) {
 	case *gast.BasicLit:
 		function.Add("", "LDC", expr.Value)
 	case *gast.BinaryExpr:
-		TransformGoExpr(function, expr.Y)
-		TransformGoExpr(function, expr.X)
 		switch expr.Op {
+
 		case gtoken.ADD:
+			TransformGoExpr(function, expr.X)
+			TransformGoExpr(function, expr.Y)
 			function.Add("", "ADD")
+		case gtoken.SUB:
+			TransformGoExpr(function, expr.X)
+			TransformGoExpr(function, expr.Y)
+			function.Add("", "SUB")
+		case gtoken.MUL:
+			TransformGoExpr(function, expr.X)
+			TransformGoExpr(function, expr.Y)
+			function.Add("", "MUL")
+		case gtoken.QUO:
+			TransformGoExpr(function, expr.X)
+			TransformGoExpr(function, expr.Y)
+			function.Add("", "DIV")
+
+		case gtoken.EQL: // ==
+			TransformGoExpr(function, expr.X)
+			TransformGoExpr(function, expr.Y)
+			function.Add("", "CEQ")
+		case gtoken.LSS: // <
+			TransformGoExpr(function, expr.Y)
+			TransformGoExpr(function, expr.X)
+			function.Add("", "CGT")
+		case gtoken.GTR: // >
+			TransformGoExpr(function, expr.X)
+			TransformGoExpr(function, expr.Y)
+			function.Add("", "CGT")
+
+		case gtoken.NEQ: // !=
+			TransformGoExpr(function, expr.X)
+			TransformGoExpr(function, expr.Y)
+			function.Add("", "CEQ")
+			function.Add("", "LDC", 0)
+			function.Add("", "CEQ")
+		case gtoken.LEQ: // <=
+			TransformGoExpr(function, expr.Y)
+			TransformGoExpr(function, expr.X)
+			function.Add("", "GEQ")
+		case gtoken.GEQ: // >=
+			TransformGoExpr(function, expr.X)
+			TransformGoExpr(function, expr.Y)
+			function.Add("", "GEQ")
+
+		default:
+			err = errors.New("unsupported operation")
 		}
 	case *gast.Ident:
 		function.Add(expr.Name, "LD", expr.Name)
