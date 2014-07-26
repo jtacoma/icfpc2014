@@ -24,6 +24,7 @@ func main() int {
 LDF 3 ; load main
 AP 0
 RTN
+
 ; main
 LDC 21
 LDC 21
@@ -33,7 +34,7 @@ RTN
 	}, {
 		In: `
 package lambdaman
-func main(addtwo func (int, int) int) int {
+func main() int {
 	return addtwo(21, 21)
 }
 func addtwo(a, b int) int {
@@ -42,16 +43,19 @@ func addtwo(a, b int) int {
 `,
 		Out: `
 ; program: lambdaman
-LDF 9 ; load addtwo
-LDF 4 ; load main
-AP 1
+DUM 1  ; top-level declarations
+LDF 10 ; load addtwo
+LDF 5  ; load main
+RAP 1
 RTN
+
 ; main
 LDC 21
 LDC 21
 LD 0 0 ; addtwo
 AP 2
 RTN
+
 ; addtwo
 LD 0 1 ; b
 LD 0 0 ; a

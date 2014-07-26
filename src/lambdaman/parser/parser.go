@@ -26,6 +26,16 @@ func TransformGoFile(go_file *gast.File) (program *ast.Program, err error) {
 	program = &ast.Program{
 		Name: go_file.Name.Name,
 	}
+	topdecls := ast.Frame{}
+	for _, decl := range go_file.Decls {
+		switch decl := decl.(type) {
+		case *gast.FuncDecl:
+			if decl.Name.Name != "main" {
+				topdecls.Data = append(topdecls.Data,
+					ast.Datum{Name: decl.Name.Name})
+			}
+		}
+	}
 	for _, decl := range go_file.Decls {
 		switch decl := decl.(type) {
 		case *gast.FuncDecl:
@@ -78,7 +88,7 @@ func TransformGoExpr(function *ast.Function, expr gast.Expr) (err error) {
 			function.Add("", "ADD")
 		}
 	case *gast.Ident:
-		err = function.ResolveSymbol(expr.Name)
+		function.Add(expr.Name, "LD", expr.Name)
 	case *gast.CallExpr:
 		for i := len(expr.Args) - 1; i >= 0; i -= 1 {
 			arg := expr.Args[i]

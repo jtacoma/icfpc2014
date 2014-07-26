@@ -4,7 +4,7 @@ import (
 	"ghc"
 )
 
-func main(addtwo func(int, int) int) int {
+func main() int {
 	return addtwo(10, 32)
 }
 

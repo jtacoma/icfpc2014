@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 )
 
 type Program struct {
@@ -26,52 +27,88 @@ func (p *Program) WriteTo(w io.Writer) (err error) {
 	var (
 		preamble Commands
 		offset   = len(p.functions) + 2
+		ndecls   = len(p.functions) - 1
+		decls    []Datum
 		main     *Function
 		nonmain  []*Function
 	)
+	if ndecls > 0 {
+		offset += 1
+		preamble = append(preamble,
+			Command{
+				Name: "DUM",
+				Args: []interface{}{
+					ndecls,
+				},
+				Comment: "top-level declarations",
+			})
+	}
 	for i := range p.functions {
 		if p.functions[i].Name == "main" {
 			main = p.functions[i]
 		} else {
 			nonmain = append(nonmain, p.functions[i])
+			decls = append(decls,
+				Datum{
+					Name: p.functions[i].Name,
+				})
 		}
 	}
 	if main == nil {
 		err = errors.New("lambdaman/ast: no main function")
 		return
 	}
+	mainoffset := offset
 	offset += len(main.Commands)
 	for _, f := range nonmain {
-		preamble = append(preamble, Command{
-			Name: "LDF",
-			Args: []interface{}{
-				offset,
-			},
-			Comment: "load " + f.Name,
-		})
+		preamble = append(preamble,
+			Command{
+				Name: "LDF",
+				Args: []interface{}{
+					offset,
+				},
+				Comment: "load " + f.Name,
+			})
 		offset += len(f.Commands)
+	}
+	rap := "RAP"
+	if ndecls == 0 {
+		rap = "AP"
 	}
 	preamble = append(preamble,
 		Command{
 			Name: "LDF",
 			Args: []interface{}{
-				len(preamble) + 3,
+				mainoffset,
 			},
 			Comment: "load main",
-		})
-	preamble = append(preamble,
+		},
 		Command{
-			Name: "AP",
+			Name: rap,
 			Args: []interface{}{
-				len(p.functions) - 1,
+				ndecls,
 			},
 		},
 		Command{Name: "RTN"},
 	)
+	mainframe := Frame{Data: decls}
 	preamble.WriteTo(w)
-	for _, f := range p.functions {
+	for ifunc, f := range p.functions {
+		fmt.Fprintln(w)
 		fmt.Fprintln(w, ";", f.Name)
-		f.Commands.WriteTo(w)
+		if ifunc == 0 {
+			f.Args = mainframe
+		} else {
+			f.Args.Parent = &mainframe
+		}
+		cs := make(Commands, len(f.Commands))
+		for ic, c := range f.Commands {
+			cs[ic], err = c.Compile(&f.Args)
+			if err != nil {
+				return
+			}
+		}
+		cs.WriteTo(w)
 	}
 	return
 }
@@ -93,7 +130,13 @@ func (f *Function) Add(comment, name string, args ...interface{}) {
 func (f *Function) ResolveSymbol(symbol string) error {
 	iframe, idatum, found := f.Args.Find(symbol)
 	if !found {
-		return errors.New("not found: " + symbol)
+		var avail []string
+		for frame := &f.Args; frame != nil; frame = frame.Parent {
+			for _, datum := range frame.Data {
+				avail = append(avail, datum.Name)
+			}
+		}
+		return errors.New(symbol + " not found in: " + strings.Join(avail, " "))
 	}
 	f.Add(symbol, "LD", iframe, idatum)
 	return nil
@@ -144,6 +187,18 @@ func (c Command) String() string {
 		raw += " " + fmt.Sprint(c.Args...)
 	}
 	return raw
+}
+
+func (c Command) Compile(f *Frame) (Command, error) {
+	if c.Name == "LD" && len(c.Args) == 1 {
+		name := c.Args[0].(string)
+		iframe, idatum, found := f.Find(name)
+		if !found {
+			return Command{}, errors.New(name)
+		}
+		c.Args = []interface{}{iframe, idatum}
+	}
+	return c, nil
 }
 
 type Commands []Command
