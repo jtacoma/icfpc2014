@@ -1,32 +1,35 @@
 package lambdaman
 
 import (
-	"fmt"
-	"go/ast"
+	gast "go/ast"
 	"go/token"
 	"io"
+
+	last "lambdaman/ast"
 )
 
-func Compile(file *ast.File, w io.Writer) (err error) {
-	fmt.Fprintln(w, "; package", file.Name)
+func Compile(file *gast.File, w io.Writer) (err error) {
+	var program last.Program
+	program.Name = file.Name.Name
 	for _, decl := range file.Decls {
 		switch decl := decl.(type) {
-		case *ast.FuncDecl:
-			fmt.Fprintln(w, ";", decl.Name)
-			if err = CompileBlock(decl.Body, w); err != nil {
-				return
-			}
+		case *gast.FuncDecl:
+			err = CompileFunc(&program, decl)
+		}
+		if err != nil {
+			return
 		}
 	}
-	return
+	return program.WriteTo(w)
 }
 
-func CompileBlock(body *ast.BlockStmt, w io.Writer) (err error) {
-	for _, stmt := range body.List {
+func CompileFunc(program *last.Program, decl *gast.FuncDecl) (err error) {
+	function := program.NewFunction(decl.Name.Name)
+	for _, stmt := range decl.Body.List {
 		switch stmt := stmt.(type) {
-		case *ast.ReturnStmt:
+		case *gast.ReturnStmt:
 			for _, expr := range stmt.Results {
-				if err = CompileExpr(expr, w); err != nil {
+				if err = CompileExpr(function, expr); err != nil {
 					return
 				}
 			}
@@ -35,14 +38,14 @@ func CompileBlock(body *ast.BlockStmt, w io.Writer) (err error) {
 	return
 }
 
-func CompileExpr(expr ast.Expr, w io.Writer) (err error) {
+func CompileExpr(function *last.Function, expr gast.Expr) (err error) {
 	switch expr := expr.(type) {
-	case *ast.BinaryExpr:
-		fmt.Fprintln(w, "LDC", expr.X.(*ast.BasicLit).Value)
-		fmt.Fprintln(w, "LDC", expr.Y.(*ast.BasicLit).Value)
+	case *gast.BinaryExpr:
+		function.Add("LDC", expr.X.(*gast.BasicLit).Value)
+		function.Add("LDC", expr.Y.(*gast.BasicLit).Value)
 		switch expr.Op {
 		case token.ADD:
-			fmt.Fprintln(w, "ADD")
+			function.Add("ADD")
 		}
 	}
 	return

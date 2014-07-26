@@ -20,7 +20,7 @@ func main() int {
 }
 `,
 		Out: `
-; package lambdaman
+; program: lambdaman
 ; main
 LDC 21
 LDC 21
