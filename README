@@ -1,21 +1,27 @@
 ICFP Contest 2014
 =================
 
-This is just an initial commit based on the simple example provided in
-the specification.
+This ICFP Contest 2014 entry uses the language Go.
 
-http://icfpcontest.org/specification.html
-
-> To illustrate the interface, here is an AI that always goes down.
->
-> We can see from the code that it also (pointlessly) maintains an
-> integer state (starting from 42) and increments it on every step.
+The package in src/lambdaman provides an algorithm for transforming a Go
+AST into LambdaMan CPU assembly code.  The LambdaMan bot itself is
+written in the subset of Go that this algorithm supports.
 
 Building
 --------
 
- 1. Put the content of this repository in a directory named "code".
- 2. Copy lambdaman.gcc to a sibling directory named "solution".
- 3. Create a .zip or .tar.gz file containing the code and solution
-    directories.
+Ensure the prerequisites are satisified:
 
+ - Golang, and specifically the "go" command line tool, is available.
+ - The GOPATH environment variable includes the absolute path of this
+   repository.
+
+If `go` is available in PATH and the `pwd` command outputs the current
+directory's absolute path then the following invocation should do the
+trick:
+
+    GOPATH=`pwd` go run main.go > lambdaman.gcc
+
+Copy the resulting lambdaman.gcc file to a directory named "solution"
+alongside the directory containing this file, which should be named
+"code", and create a .zip or .tar.gz file containing both.
