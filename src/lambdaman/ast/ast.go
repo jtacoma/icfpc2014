@@ -117,7 +117,9 @@ func (b *Block) ExpandTo(sequence []*Block, consts map[string][]Command) ([]*Blo
 			return nil, err
 		}
 		denamed.Commands = append(denamed.Commands, evaled...)
+		denamed.Children = b.Children
 	}
+	denamed.Optimize()
 	sequence = append(sequence, denamed)
 	for _, child := range b.Children {
 		var err error
@@ -149,6 +151,52 @@ func (b *Block) Add(comment, name string, args ...interface{}) {
 		Args:    args,
 		Comment: comment,
 	})
+}
+
+func (b *Block) Optimize() {
+	if len(b.Commands) == 1 {
+		return
+	}
+	kind := b.Commands[len(b.Commands)-1].Name
+	tail := b.Commands[len(b.Commands)-2]
+	switch tail.Name {
+	case "SEL":
+		tail = Command{
+			Name:    "TSEL",
+			Args:    tail.Args,
+			Comment: tail.Comment,
+		}
+		tname := tail.Args[0].(string)
+		fname := tail.Args[1].(string)
+		for _, child := range b.Children {
+			if child.Name() == tname || child.Name() == fname {
+				child.Commands[len(child.Commands)-1] =
+					child.Commands[len(child.Commands)-1].SetName(kind)
+			}
+		}
+		b.Commands = b.Commands[:len(b.Commands)-1]
+		b.Commands[len(b.Commands)-1] = tail
+	case "AP":
+		if kind == "RTN" {
+			tail = Command{
+				Name:    "TAP",
+				Args:    tail.Args,
+				Comment: tail.Comment,
+			}
+			b.Commands = b.Commands[:len(b.Commands)-1]
+			b.Commands[len(b.Commands)-1] = tail
+		}
+	case "RAP":
+		if kind == "RTN" {
+			tail = Command{
+				Name:    "TRAP",
+				Args:    tail.Args,
+				Comment: tail.Comment,
+			}
+			b.Commands = b.Commands[:len(b.Commands)-1]
+			b.Commands[len(b.Commands)-1] = tail
+		}
+	}
 }
 
 func (b *Block) WriteTo(w io.Writer, lineNums map[string]int) (err error) {
@@ -254,7 +302,7 @@ func (c Command) EvalLineNums(lineNums map[string]int) (Command, error) {
 		if !ok {
 			return c, &NotFoundError{VarName: name}
 		}
-	case "SEL":
+	case "SEL", "TSEL":
 		name := c.Args[0].(string)
 		c.Args[0], ok = lineNums[name]
 		if !ok {
@@ -267,6 +315,14 @@ func (c Command) EvalLineNums(lineNums map[string]int) (Command, error) {
 		}
 	}
 	return c, nil
+}
+
+func (c Command) SetName(name string) Command {
+	return Command{
+		Name:    name,
+		Args:    c.Args,
+		Comment: c.Comment,
+	}
 }
 
 func (c Command) SetComment(comment string) Command {

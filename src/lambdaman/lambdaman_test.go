@@ -28,20 +28,19 @@ func main() int {
 LDC 1
 LDC 0
 CGTE
-SEL 5 9 ; main.3t main.3f
-RTN
+TSEL 4 8 ; main.3t main.3f
 
 ; main.3t
 LDC 21
 LDC 2
 MUL
-JOIN
+RTN
 
 ; main.3f
 LDC 42
 LDC 2
 DIV
-JOIN
+RTN
 `,
 	}, {
 		In: `
@@ -61,14 +60,13 @@ func addtwo(a, b int) int {
 LDC 1
 LDC 2
 LDC 3
-LDF 6 ; arithmetic
-AP 3
-RTN
+LDF 5 ; arithmetic
+TAP 3
 
 ; arithmetic
 LD 0 0 ; a
 LD 0 1 ; b
-LDF 13 ; addtwo
+LDF 12 ; addtwo
 AP 2
 LD 0 2 ; c
 MUL
@@ -118,7 +116,7 @@ func Direction(mem interface{}) {
 ; main
 LD 0 0 ; world
 LD 0 1 ; ghosts
-LDF 20 ; NewMem
+LDF 19 ; NewMem
 AP 2
 LDF 7  ; step
 CONS
@@ -127,16 +125,15 @@ RTN
 ; step
 LD 0 0 ; mem
 LD 0 1 ; world
-LDF 22 ; NextMem
+LDF 21 ; NextMem
 AP 2
-LDF 14 ; split
-AP 1
-RTN
+LDF 13 ; split
+TAP 1
 
 ; split
 LD 0 0 ; mem
 LD 0 0 ; mem
-LDF 26 ; Direction
+LDF 25 ; Direction
 AP 1
 CONS
 RTN
