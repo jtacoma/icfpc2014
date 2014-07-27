@@ -155,7 +155,7 @@ func (b *Block) WriteTo(w io.Writer, lineNums map[string]int) (err error) {
 	fmt.Fprintln(w, ";", b.Name())
 	cs := make(Commands, len(b.Commands))
 	for ic, c := range b.Commands {
-		cs[ic], err = c.Compile(lineNums)
+		cs[ic], err = c.EvalLineNums(lineNums)
 		if err != nil {
 			return
 		}
@@ -238,14 +238,14 @@ func (c Command) EvalNames(f *Frame, consts map[string][]Command) ([]Command, er
 		name := c.Args[0].(string)
 		cmds, ok = consts[name]
 		if !ok {
-			// pass through, maybe Compile will resolve it
+			// pass through, maybe EvalLineNums will resolve it
 			cmds = []Command{c}
 		}
 	}
 	return cmds, nil
 }
 
-func (c Command) Compile(lineNums map[string]int) (Command, error) {
+func (c Command) EvalLineNums(lineNums map[string]int) (Command, error) {
 	var ok bool
 	switch c.Name {
 	case "LDF":
