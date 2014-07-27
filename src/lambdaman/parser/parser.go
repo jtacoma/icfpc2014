@@ -173,7 +173,10 @@ func TransformGoExpr(block *ast.Block, expr gast.Expr) (err error) {
 			err = errors.New("unsupported literal")
 		case *gast.ArrayType:
 			for iexpr, expr := range expr.Elts {
-				TransformGoExpr(block, expr)
+				err = TransformGoExpr(block, expr)
+				if err != nil {
+					return
+				}
 				if iexpr > 0 {
 					block.Add("", "CONS")
 				}
