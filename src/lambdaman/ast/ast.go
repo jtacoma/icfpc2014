@@ -8,130 +8,150 @@ import (
 )
 
 type Program struct {
-	Name      string
-	functions []*Function
+	Name   string
+	blocks map[string]*Block
 }
 
-func (p *Program) NewFunction(name string) *Function {
-	function := &Function{
-		Name: name,
+func (p *Program) Block(name string) *Block {
+	block, exists := p.blocks[name]
+	if !exists {
+		block = &Block{
+			name: name,
+		}
+		if p.blocks == nil {
+			p.blocks = make(map[string]*Block)
+		}
+		p.blocks[name] = block
 	}
-	p.functions = append(p.functions, function)
-	return function
+	return block
 }
 
 func (p *Program) WriteTo(w io.Writer) (err error) {
-	if _, err = fmt.Fprintln(w, "; program:", p.Name); err != nil {
-		return
-	}
 	var (
-		preamble Commands
-		offset   = len(p.functions) + 2
-		ndecls   = len(p.functions) - 1
+		header   = fmt.Sprint("program: ", p.Name)
+		preamble = &Block{name: header}
+		offset   = len(p.blocks) + 2
+		ndecls   = len(p.blocks) - 1
 		decls    []Datum
-		main     *Function
-		nonmain  []*Function
+		main     *Block
+		nonmain  []*Block
 	)
+
 	if ndecls > 0 {
 		offset += 1
-		preamble = append(preamble,
-			Command{
-				Name: "DUM",
-				Args: []interface{}{
-					ndecls,
-				},
-				Comment: "top-level declarations",
-			})
+		preamble.Add("top-level declarations",
+			"DUM", ndecls)
 	}
-	for i := range p.functions {
-		if p.functions[i].Name == "main" {
-			main = p.functions[i]
-		} else {
-			nonmain = append(nonmain, p.functions[i])
+
+	main = p.blocks["main"]
+	if main == nil {
+		err = errors.New("lambdaman/ast: no main block")
+		return
+	}
+
+	for _, block := range p.blocks {
+		if block.Name() != "main" {
+			nonmain = append(nonmain, block)
 			decls = append(decls,
 				Datum{
-					Name: p.functions[i].Name,
+					Name: block.Name(),
 				})
 		}
 	}
-	if main == nil {
-		err = errors.New("lambdaman/ast: no main function")
-		return
+
+	for _, block := range nonmain {
+		preamble.Add("load "+block.Name(),
+			"LDF", block.Name())
 	}
-	mainoffset := offset
-	offset += len(main.Commands)
-	for _, f := range nonmain {
-		preamble = append(preamble,
-			Command{
-				Name: "LDF",
-				Args: []interface{}{
-					offset,
-				},
-				Comment: "load " + f.Name,
-			})
-		offset += len(f.Commands)
-	}
+
+	preamble.Add("load main", "LDF", "main")
 	rap := "RAP"
 	if ndecls == 0 {
 		rap = "AP"
 	}
-	preamble = append(preamble,
-		Command{
-			Name: "LDF",
-			Args: []interface{}{
-				mainoffset,
-			},
-			Comment: "load main",
-		},
-		Command{
-			Name: rap,
-			Args: []interface{}{
-				ndecls,
-			},
-		},
-		Command{Name: "RTN"},
-	)
-	mainframe := Frame{Data: decls}
-	preamble.WriteTo(w)
-	for ifunc, f := range p.functions {
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, ";", f.Name)
-		if ifunc == 0 {
-			f.Args = mainframe
-		} else {
-			f.Args.Parent = &mainframe
+	preamble.Add("call main", rap, ndecls)
+	preamble.Add("", "RTN")
+
+	main.Env = Frame{Data: decls}
+
+	var all Blocks
+	all = preamble.AppendTo(all)
+	all = main.AppendTo(all)
+	for name, block := range p.blocks {
+		if name != "main" {
+			block.Env.Parent = &main.Env
+			all = block.AppendTo(all)
 		}
-		cs := make(Commands, len(f.Commands))
-		for ic, c := range f.Commands {
-			cs[ic], err = c.Compile(&f.Args)
-			if err != nil {
-				return
-			}
+	}
+
+	lineNums := all.LineNums()
+	for iblock, block := range all {
+		if iblock != 0 {
+			fmt.Fprintln(w)
 		}
-		cs.WriteTo(w)
+		err = block.WriteTo(w, lineNums)
+		if err != nil {
+			break
+		}
 	}
 	return
 }
 
-type Function struct {
-	Name     string
-	Commands Commands
-	Args     Frame
+type Blocks []*Block
+
+func (blocks Blocks) LineNums() map[string]int {
+	var (
+		line     = 0
+		lineNums = make(map[string]int)
+	)
+	for _, block := range blocks {
+		lineNums[block.Name()] = line
+		line += len(block.Commands)
+	}
+	return lineNums
 }
 
-func (f *Function) Add(comment, name string, args ...interface{}) {
-	f.Commands = append(f.Commands, Command{
+type Block struct {
+	name     string
+	Commands Commands
+	Env      Frame
+	Children []*Block
+}
+
+func (b *Block) Name() string { return b.name }
+
+func (b *Block) AppendTo(sequence []*Block) []*Block {
+	sequence = append(sequence, b)
+	for _, child := range b.Children {
+		sequence = child.AppendTo(sequence)
+	}
+	return sequence
+}
+
+func (b *Block) Child(affix string) *Block {
+	prefix := fmt.Sprintf("%s.%d",
+		b.Name(), len(b.Commands))
+	child := &Block{
+		name: prefix + affix,
+		Env:  b.Env,
+	}
+	b.Children = append(b.Children, child)
+	return child
+}
+
+func (b *Block) Add(comment, name string, args ...interface{}) {
+	b.Commands = append(b.Commands, Command{
 		Name:    name,
 		Args:    args,
 		Comment: comment,
 	})
 }
 
-func (f *Function) ResolveSymbol(symbol string) error {
-	iframe, idatum, found := f.Args.Find(symbol)
+func (f *Block) ResolveSymbol(symbol string) error {
+	iframe, idatum, found := f.Env.Find(symbol)
 	if !found {
 		var avail []string
-		for frame := &f.Args; frame != nil; frame = frame.Parent {
+		for frame := &f.Env; frame != nil; frame = frame.Parent {
 			for _, datum := range frame.Data {
 				avail = append(avail, datum.Name)
 			}
@@ -140,6 +160,19 @@ func (f *Function) ResolveSymbol(symbol string) error {
 	}
 	f.Add(symbol, "LD", iframe, idatum)
 	return nil
+}
+
+func (b *Block) WriteTo(w io.Writer, lineNums map[string]int) (err error) {
+	fmt.Fprintln(w, ";", b.Name())
+	cs := make(Commands, len(b.Commands))
+	for ic, c := range b.Commands {
+		cs[ic], err = c.Compile(&b.Env, lineNums)
+		if err != nil {
+			return
+		}
+	}
+	cs.WriteTo(w)
+	return
 }
 
 type Datum struct {
@@ -189,14 +222,35 @@ func (c Command) String() string {
 	return raw
 }
 
-func (c Command) Compile(f *Frame) (Command, error) {
-	if c.Name == "LD" && len(c.Args) == 1 {
-		name := c.Args[0].(string)
-		iframe, idatum, found := f.Find(name)
-		if !found {
-			return Command{}, errors.New(name)
+func (c Command) Compile(f *Frame, lineNums map[string]int) (Command, error) {
+	var ok bool
+	switch c.Name {
+	case "LD":
+		if len(c.Args) == 1 {
+			name := c.Args[0].(string)
+			iframe, idatum, found := f.Find(name)
+			if !found {
+				return Command{}, errors.New(name)
+			}
+			c.Args = []interface{}{iframe, idatum}
 		}
-		c.Args = []interface{}{iframe, idatum}
+	case "LDF":
+		name := c.Args[0].(string)
+		c.Args[0], ok = lineNums[name]
+		if !ok {
+			return c, errors.New(name + " not found")
+		}
+	case "SEL":
+		name := c.Args[0].(string)
+		c.Args[0], ok = lineNums[name]
+		if !ok {
+			return c, errors.New(name + " not found")
+		}
+		name = c.Args[1].(string)
+		c.Args[1], ok = lineNums[name]
+		if !ok {
+			return c, errors.New(name + " not found")
+		}
 	}
 	return c, nil
 }

@@ -16,20 +16,38 @@ var tests = []struct {
 		In: `
 package lambdaman
 func main() int {
-	return 21 + 21
+	if 0 <= 1 {
+		21 * 2
+	} else {
+		42 / 2
+	}
+	return
 }
 `,
 		Out: `
 ; program: lambdaman
 LDF 3 ; load main
-AP 0
+AP 0  ; call main
 RTN
 
 ; main
-LDC 21
-LDC 21
-ADD
+LDC 1
+LDC 0
+CGTE
+SEL 8 12 ; main.3t main.3f
 RTN
+
+; main.3t
+LDC 21
+LDC 2
+MUL
+JOIN
+
+; main.3f
+LDC 42
+LDC 2
+DIV
+JOIN
 `,
 	}, {
 		In: `
@@ -50,7 +68,7 @@ DUM 2  ; top-level declarations
 LDF 12 ; load arithmetic
 LDF 19 ; load addtwo
 LDF 6  ; load main
-RAP 2
+RAP 2  ; call main
 RTN
 
 ; main

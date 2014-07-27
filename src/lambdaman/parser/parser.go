@@ -49,100 +49,118 @@ func TransformGoFile(go_file *gast.File) (program *ast.Program, err error) {
 	return program, nil
 }
 
-func TransformGoFunc(p *ast.Program, decl *gast.FuncDecl) (err error) {
-	function := p.NewFunction(decl.Name.Name)
+func TransformGoFunc(p *ast.Program, decl *gast.FuncDecl) error {
+	block := p.Block(decl.Name.Name)
+	err := appendGoStmts(block, decl.Body.List)
+	if err != nil {
+		return err
+	}
 	for _, param := range decl.Type.Params.List {
 		for _, ident := range param.Names {
-			function.Args.Data = append(function.Args.Data,
+			block.Env.Data = append(block.Env.Data,
 				ast.Datum{Name: ident.Name})
 		}
 	}
-	for _, stmt := range decl.Body.List {
+	return nil
+}
+
+func appendGoStmts(b *ast.Block, stmts []gast.Stmt) (err error) {
+	for _, stmt := range stmts {
 		switch stmt := stmt.(type) {
 		case *gast.ExprStmt:
-			err = TransformGoExpr(function, stmt.X)
+			err = TransformGoExpr(b, stmt.X)
 			if err != nil {
 				return
 			}
+		case *gast.IfStmt:
+			err = TransformGoExpr(b, stmt.Cond)
+			tbranch := b.Child("t")
+			appendGoStmts(tbranch, stmt.Body.List)
+			tbranch.Add("", "JOIN")
+			fbranch := b.Child("f")
+			if stmt.Else != nil {
+				appendGoStmts(fbranch,
+					stmt.Else.(*gast.BlockStmt).List)
+			}
+			fbranch.Add("", "JOIN")
+			comment := tbranch.Name() + " " + fbranch.Name()
+			b.Add(comment, "SEL",
+				tbranch.Name(), fbranch.Name())
 		case *gast.ReturnStmt:
 			for _, expr := range stmt.Results {
-				err = TransformGoExpr(function, expr)
+				err = TransformGoExpr(b, expr)
 				if err != nil {
 					return
 				}
 			}
-			function.Add("", "RTN")
+			b.Add("", "RTN")
 		}
 	}
 	return
 }
 
-func TransformGoExpr(function *ast.Function, expr gast.Expr) (err error) {
+func TransformGoExpr(block *ast.Block, expr gast.Expr) (err error) {
 	switch expr := expr.(type) {
 	case *gast.BasicLit:
-		function.Add("", "LDC", expr.Value)
+		block.Add("", "LDC", expr.Value)
 	case *gast.BinaryExpr:
 		switch expr.Op {
-
 		case gtoken.ADD:
-			TransformGoExpr(function, expr.X)
-			TransformGoExpr(function, expr.Y)
-			function.Add("", "ADD")
+			TransformGoExpr(block, expr.X)
+			TransformGoExpr(block, expr.Y)
+			block.Add("", "ADD")
 		case gtoken.SUB:
-			TransformGoExpr(function, expr.X)
-			TransformGoExpr(function, expr.Y)
-			function.Add("", "SUB")
+			TransformGoExpr(block, expr.X)
+			TransformGoExpr(block, expr.Y)
+			block.Add("", "SUB")
 		case gtoken.MUL:
-			TransformGoExpr(function, expr.X)
-			TransformGoExpr(function, expr.Y)
-			function.Add("", "MUL")
+			TransformGoExpr(block, expr.X)
+			TransformGoExpr(block, expr.Y)
+			block.Add("", "MUL")
 		case gtoken.QUO:
-			TransformGoExpr(function, expr.X)
-			TransformGoExpr(function, expr.Y)
-			function.Add("", "DIV")
-
+			TransformGoExpr(block, expr.X)
+			TransformGoExpr(block, expr.Y)
+			block.Add("", "DIV")
 		case gtoken.EQL: // ==
-			TransformGoExpr(function, expr.X)
-			TransformGoExpr(function, expr.Y)
-			function.Add("", "CEQ")
+			TransformGoExpr(block, expr.X)
+			TransformGoExpr(block, expr.Y)
+			block.Add("", "CEQ")
 		case gtoken.LSS: // <
-			TransformGoExpr(function, expr.Y)
-			TransformGoExpr(function, expr.X)
-			function.Add("", "CGT")
+			TransformGoExpr(block, expr.Y)
+			TransformGoExpr(block, expr.X)
+			block.Add("", "CGT")
 		case gtoken.GTR: // >
-			TransformGoExpr(function, expr.X)
-			TransformGoExpr(function, expr.Y)
-			function.Add("", "CGT")
-
+			TransformGoExpr(block, expr.X)
+			TransformGoExpr(block, expr.Y)
+			block.Add("", "CGT")
 		case gtoken.NEQ: // !=
-			TransformGoExpr(function, expr.X)
-			TransformGoExpr(function, expr.Y)
-			function.Add("", "CEQ")
-			function.Add("", "LDC", 0)
-			function.Add("", "CEQ")
+			TransformGoExpr(block, expr.X)
+			TransformGoExpr(block, expr.Y)
+			block.Add("", "CEQ")
+			block.Add("", "LDC", 0)
+			block.Add("", "CEQ")
 		case gtoken.LEQ: // <=
-			TransformGoExpr(function, expr.Y)
-			TransformGoExpr(function, expr.X)
-			function.Add("", "GEQ")
+			TransformGoExpr(block, expr.Y)
+			TransformGoExpr(block, expr.X)
+			block.Add("", "CGTE")
 		case gtoken.GEQ: // >=
-			TransformGoExpr(function, expr.X)
-			TransformGoExpr(function, expr.Y)
-			function.Add("", "GEQ")
-
+			TransformGoExpr(block, expr.X)
+			TransformGoExpr(block, expr.Y)
+			block.Add("", "CGTE")
 		default:
 			err = errors.New("unsupported operation")
 		}
 	case *gast.Ident:
-		function.Add(expr.Name, "LD", expr.Name)
+		block.Add(expr.Name, "LD", expr.Name)
 	case *gast.CallExpr:
 		for _, arg := range expr.Args {
-			err = TransformGoExpr(function, arg)
+			err = TransformGoExpr(block, arg)
 			if err != nil {
 				return
 			}
 		}
-		err = TransformGoExpr(function, expr.Fun)
-		function.Add("", "AP", len(expr.Args))
+		err = TransformGoExpr(block, expr.Fun)
+		block.Add("", "AP", len(expr.Args))
 	}
 	return
 }
