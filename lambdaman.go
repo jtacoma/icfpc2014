@@ -1,16 +1,16 @@
 package lambdaman
 
-func arithmetic(a, b, c int) int {
-	return addtwo(a, b) * c
+func arithmetic(a, b, c int) {
+	addtwo(a, b) * c
 }
 
-func addtwo(a, b int) int {
-	return a + b
+func addtwo(a, b int) {
+	a + b
 }
 
-func main() int {
+func main() {
 	if 0 <= 1 {
 		21 * 2
 	}
-	return arithmetic(1, 2, 3)
+	arithmetic(1, 2, 3)
 }

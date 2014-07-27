@@ -55,6 +55,7 @@ func TransformGoFunc(p *ast.Program, decl *gast.FuncDecl) error {
 	if err != nil {
 		return err
 	}
+	block.Add("", "RTN")
 	for _, param := range decl.Type.Params.List {
 		for _, ident := range param.Names {
 			block.Env.Data = append(block.Env.Data,
@@ -87,13 +88,7 @@ func appendGoStmts(b *ast.Block, stmts []gast.Stmt) (err error) {
 			b.Add(comment, "SEL",
 				tbranch.Name(), fbranch.Name())
 		case *gast.ReturnStmt:
-			for _, expr := range stmt.Results {
-				err = TransformGoExpr(b, expr)
-				if err != nil {
-					return
-				}
-			}
-			b.Add("", "RTN")
+			return errors.New("explicit return not supported")
 		}
 	}
 	return
