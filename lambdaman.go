@@ -1,16 +1,22 @@
 package lambdaman
 
-func arithmetic(a, b, c int) {
-	addtwo(a, b) * c
-}
-
-func addtwo(a, b int) {
-	a + b
-}
+const (
+	up    = 0
+	right = 1
+	down  = 2
+	left  = 3
+)
 
 func main() {
-	if 0 <= 1 {
-		21 * 2
+	[]interface{}{
+		42,
+		step,
 	}
-	arithmetic(1, 2, 3)
+}
+
+func step(s int) {
+	[]interface{}{
+		s + 1,
+		down,
+	}
 }

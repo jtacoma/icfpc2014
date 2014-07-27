@@ -10,6 +10,17 @@ import (
 type Program struct {
 	Name   string
 	blocks map[string]*Block
+	consts map[string][]Command
+}
+
+func (p *Program) AddConst(name string, value []Command) error {
+	if p.consts == nil {
+		p.consts = make(map[string][]Command)
+	} else if _, dup := p.consts[name]; dup {
+		return errors.New("duplicate const name " + name)
+	}
+	p.consts[name] = value
+	return nil
 }
 
 func (p *Program) Block(name string) *Block {
@@ -75,12 +86,21 @@ func (p *Program) WriteTo(w io.Writer) (err error) {
 	main.Env = Frame{Data: decls}
 
 	var all Blocks
-	all = preamble.AppendTo(all)
-	all = main.AppendTo(all)
+	all, err = preamble.ExpandTo(all, p.consts)
+	if err != nil {
+		return
+	}
+	all, err = main.ExpandTo(all, p.consts)
+	if err != nil {
+		return
+	}
 	for name, block := range p.blocks {
 		if name != "main" {
 			block.Env.Parent = &main.Env
-			all = block.AppendTo(all)
+			all, err = block.ExpandTo(all, p.consts)
+			if err != nil {
+				return
+			}
 		}
 	}
 
@@ -120,12 +140,26 @@ type Block struct {
 
 func (b *Block) Name() string { return b.name }
 
-func (b *Block) AppendTo(sequence []*Block) []*Block {
-	sequence = append(sequence, b)
-	for _, child := range b.Children {
-		sequence = child.AppendTo(sequence)
+func (b *Block) ExpandTo(sequence []*Block, consts map[string][]Command) ([]*Block, error) {
+	denamed := &Block{
+		name: b.name,
 	}
-	return sequence
+	for _, cmd := range b.Commands {
+		evaled, err := cmd.EvalNames(&b.Env, consts)
+		if err != nil {
+			return nil, err
+		}
+		denamed.Commands = append(denamed.Commands, evaled...)
+	}
+	sequence = append(sequence, denamed)
+	for _, child := range b.Children {
+		var err error
+		sequence, err = child.ExpandTo(sequence, consts)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return sequence, nil
 }
 
 func (b *Block) Child(affix string) *Block {
@@ -166,7 +200,7 @@ func (b *Block) WriteTo(w io.Writer, lineNums map[string]int) (err error) {
 	fmt.Fprintln(w, ";", b.Name())
 	cs := make(Commands, len(b.Commands))
 	for ic, c := range b.Commands {
-		cs[ic], err = c.Compile(&b.Env, lineNums)
+		cs[ic], err = c.Compile(lineNums)
 		if err != nil {
 			return
 		}
@@ -222,23 +256,47 @@ func (c Command) String() string {
 	return raw
 }
 
-func (c Command) Compile(f *Frame, lineNums map[string]int) (Command, error) {
-	var ok bool
+func (c Command) EvalNames(f *Frame, consts map[string][]Command) ([]Command, error) {
+	var (
+		ok   bool
+		cmds []Command
+	)
 	switch c.Name {
+	default:
+		cmds = append(cmds, c)
 	case "LD":
 		if len(c.Args) == 1 {
 			name := c.Args[0].(string)
 			iframe, idatum, found := f.Find(name)
 			if !found {
-				return Command{}, errors.New(name)
+				cmds, found = consts[name]
+				if !found {
+					return cmds, errors.New(name)
+				}
+			} else {
+				c.Args = []interface{}{iframe, idatum}
+				cmds = append(cmds, c)
 			}
-			c.Args = []interface{}{iframe, idatum}
 		}
+	case "LDF":
+		name := c.Args[0].(string)
+		cmds, ok = consts[name]
+		if !ok {
+			// pass through, maybe Compile will resolve it
+			cmds = []Command{c}
+		}
+	}
+	return cmds, nil
+}
+
+func (c Command) Compile(lineNums map[string]int) (Command, error) {
+	var ok bool
+	switch c.Name {
 	case "LDF":
 		name := c.Args[0].(string)
 		c.Args[0], ok = lineNums[name]
 		if !ok {
-			return c, errors.New(name + " not found")
+			return c, errors.New(name)
 		}
 	case "SEL":
 		name := c.Args[0].(string)
@@ -253,6 +311,14 @@ func (c Command) Compile(f *Frame, lineNums map[string]int) (Command, error) {
 		}
 	}
 	return c, nil
+}
+
+func (c Command) SetComment(comment string) Command {
+	return Command{
+		Name:    c.Name,
+		Args:    c.Args,
+		Comment: comment,
+	}
 }
 
 type Commands []Command

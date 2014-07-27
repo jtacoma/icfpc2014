@@ -41,12 +41,42 @@ func TransformGoFile(go_file *gast.File) (program *ast.Program, err error) {
 		switch decl := decl.(type) {
 		case *gast.FuncDecl:
 			err = TransformGoFunc(program, decl)
+		case *gast.GenDecl:
+			switch decl.Tok {
+			case gtoken.CONST:
+				for _, spec := range decl.Specs {
+					err = TransformGoConst(
+						program,
+						spec.(*gast.ValueSpec))
+				}
+			}
 		}
 		if err != nil {
 			return nil, err
 		}
 	}
 	return program, nil
+}
+
+func TransformGoConst(p *ast.Program, spec *gast.ValueSpec) error {
+	for ivalue, name := range spec.Names {
+		var block ast.Block
+		err := TransformGoExpr(&block, spec.Values[ivalue])
+		if err != nil {
+			return err
+		}
+		for icmd, cmd := range block.Commands {
+			if len(cmd.Comment) == 0 {
+				block.Commands[icmd] =
+					cmd.SetComment(name.Name)
+			}
+		}
+		err = p.AddConst(name.Name, block.Commands)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func TransformGoFunc(p *ast.Program, decl *gast.FuncDecl) error {
@@ -144,6 +174,16 @@ func TransformGoExpr(block *ast.Block, expr gast.Expr) (err error) {
 			block.Add("", "CGTE")
 		default:
 			err = errors.New("unsupported operation")
+		}
+	case *gast.CompositeLit:
+		switch expr.Type.(type) {
+		case *gast.ArrayType:
+			for iexpr, expr := range expr.Elts {
+				TransformGoExpr(block, expr)
+				if iexpr > 0 {
+					block.Add("", "CONS")
+				}
+			}
 		}
 	case *gast.Ident:
 		block.Add(expr.Name, "LD", expr.Name)

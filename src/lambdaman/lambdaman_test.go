@@ -14,7 +14,7 @@ var tests = []struct {
 }{
 	{
 		In: `
-package lambdaman
+package branching
 func main() int {
 	if 0 <= 1 {
 		21 * 2
@@ -24,7 +24,7 @@ func main() int {
 }
 `,
 		Out: `
-; program: lambdaman
+; program: branching
 LDF 3 ; load main
 AP 0  ; call main
 RTN
@@ -50,7 +50,7 @@ JOIN
 `,
 	}, {
 		In: `
-package lambdaman
+package calling
 func main() int {
 	arithmetic(1, 2, 3)
 }
@@ -62,7 +62,7 @@ func addtwo(a, b int) int {
 }
 `,
 		Out: `
-; program: lambdaman
+; program: calling
 DUM 2  ; top-level declarations
 LDF 12 ; load arithmetic
 LDF 19 ; load addtwo
@@ -91,6 +91,50 @@ RTN
 LD 0 0 ; a
 LD 0 1 ; b
 ADD
+RTN
+`,
+	}, {
+		In: `
+package lambdaman
+const (
+	up = 0
+	right = 1
+	down = 2
+	left = 3
+)
+func main() {
+	[]interface{}{
+		42,
+		step,
+	}
+}
+func step(s int) {
+	[]interface{}{
+		s + 1,
+		down,
+	}
+}
+`,
+		Out: `
+; program: lambdaman
+DUM 1 ; top-level declarations
+LDF 9 ; load step
+LDF 5 ; load main
+RAP 1 ; call main
+RTN
+
+; main
+LDC 42
+LD 0 0 ; step
+CONS
+RTN
+
+; step
+LD 0 0 ; s
+LDC 1
+ADD
+LDC 2  ; down
+CONS
 RTN
 `,
 	},
