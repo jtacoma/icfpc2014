@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 )
 
 type Program struct {
@@ -33,70 +32,35 @@ func (p *Program) Block(name string) *Block {
 			p.blocks = make(map[string]*Block)
 		}
 		p.blocks[name] = block
+		p.AddConst(name, []Command{
+			Command{
+				Name:    "LDF",
+				Args:    []interface{}{name},
+				Comment: name,
+			},
+		})
 	}
 	return block
 }
 
 func (p *Program) WriteTo(w io.Writer) (err error) {
 	var (
-		header   = fmt.Sprint("program: ", p.Name)
-		preamble = &Block{name: header}
-		offset   = len(p.blocks) + 2
-		ndecls   = len(p.blocks) - 1
-		decls    []Datum
-		main     *Block
-		nonmain  []*Block
+		main *Block
+		all  Blocks
 	)
-
-	if ndecls > 0 {
-		offset += 1
-		preamble.Add("top-level declarations",
-			"DUM", ndecls)
-	}
 
 	main = p.blocks["main"]
 	if main == nil {
 		err = errors.New("lambdaman/ast: no main block")
 		return
 	}
-
-	for _, block := range p.blocks {
-		if block.Name() != "main" {
-			nonmain = append(nonmain, block)
-			decls = append(decls,
-				Datum{
-					Name: block.Name(),
-				})
-		}
-	}
-
-	for _, block := range nonmain {
-		preamble.Add("load "+block.Name(),
-			"LDF", block.Name())
-	}
-
-	preamble.Add("load main", "LDF", "main")
-	rap := "RAP"
-	if ndecls == 0 {
-		rap = "AP"
-	}
-	preamble.Add("call main", rap, ndecls)
-	preamble.Add("", "RTN")
-
-	main.Env = Frame{Data: decls}
-
-	var all Blocks
-	all, err = preamble.ExpandTo(all, p.consts)
-	if err != nil {
-		return
-	}
 	all, err = main.ExpandTo(all, p.consts)
 	if err != nil {
 		return
 	}
-	for name, block := range p.blocks {
-		if name != "main" {
-			block.Env.Parent = &main.Env
+
+	for _, block := range p.blocks {
+		if block.Name() != "main" {
 			all, err = block.ExpandTo(all, p.consts)
 			if err != nil {
 				return
@@ -147,6 +111,9 @@ func (b *Block) ExpandTo(sequence []*Block, consts map[string][]Command) ([]*Blo
 	for _, cmd := range b.Commands {
 		evaled, err := cmd.EvalNames(&b.Env, consts)
 		if err != nil {
+			if nf, ok := err.(*NotFoundError); ok {
+				nf.BlockName = b.name
+			}
 			return nil, err
 		}
 		denamed.Commands = append(denamed.Commands, evaled...)
@@ -156,6 +123,9 @@ func (b *Block) ExpandTo(sequence []*Block, consts map[string][]Command) ([]*Blo
 		var err error
 		sequence, err = child.ExpandTo(sequence, consts)
 		if err != nil {
+			if nf, ok := err.(*NotFoundError); ok {
+				nf.BlockName = b.name
+			}
 			return nil, err
 		}
 	}
@@ -179,21 +149,6 @@ func (b *Block) Add(comment, name string, args ...interface{}) {
 		Args:    args,
 		Comment: comment,
 	})
-}
-
-func (f *Block) ResolveSymbol(symbol string) error {
-	iframe, idatum, found := f.Env.Find(symbol)
-	if !found {
-		var avail []string
-		for frame := &f.Env; frame != nil; frame = frame.Parent {
-			for _, datum := range frame.Data {
-				avail = append(avail, datum.Name)
-			}
-		}
-		return errors.New(symbol + " not found in: " + strings.Join(avail, " "))
-	}
-	f.Add(symbol, "LD", iframe, idatum)
-	return nil
 }
 
 func (b *Block) WriteTo(w io.Writer, lineNums map[string]int) (err error) {
@@ -271,7 +226,8 @@ func (c Command) EvalNames(f *Frame, consts map[string][]Command) ([]Command, er
 			if !found {
 				cmds, found = consts[name]
 				if !found {
-					return cmds, errors.New(name)
+					return nil,
+						&NotFoundError{VarName: name}
 				}
 			} else {
 				c.Args = []interface{}{iframe, idatum}
@@ -296,18 +252,18 @@ func (c Command) Compile(lineNums map[string]int) (Command, error) {
 		name := c.Args[0].(string)
 		c.Args[0], ok = lineNums[name]
 		if !ok {
-			return c, errors.New(name)
+			return c, &NotFoundError{VarName: name}
 		}
 	case "SEL":
 		name := c.Args[0].(string)
 		c.Args[0], ok = lineNums[name]
 		if !ok {
-			return c, errors.New(name + " not found")
+			return c, &NotFoundError{VarName: name}
 		}
 		name = c.Args[1].(string)
 		c.Args[1], ok = lineNums[name]
 		if !ok {
-			return c, errors.New(name + " not found")
+			return c, &NotFoundError{VarName: name}
 		}
 	}
 	return c, nil

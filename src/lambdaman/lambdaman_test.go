@@ -24,16 +24,11 @@ func main() int {
 }
 `,
 		Out: `
-; program: branching
-LDF 3 ; load main
-AP 0  ; call main
-RTN
-
 ; main
 LDC 1
 LDC 0
 CGTE
-SEL 8 12 ; main.3t main.3f
+SEL 5 9 ; main.3t main.3f
 RTN
 
 ; main.3t
@@ -62,26 +57,18 @@ func addtwo(a, b int) int {
 }
 `,
 		Out: `
-; program: calling
-DUM 2  ; top-level declarations
-LDF 12 ; load arithmetic
-LDF 19 ; load addtwo
-LDF 6  ; load main
-RAP 2  ; call main
-RTN
-
 ; main
 LDC 1
 LDC 2
 LDC 3
-LD 0 0 ; arithmetic
+LDF 6 ; arithmetic
 AP 3
 RTN
 
 ; arithmetic
 LD 0 0 ; a
 LD 0 1 ; b
-LD 1 1 ; addtwo
+LDF 13 ; addtwo
 AP 2
 LD 0 2 ; c
 MUL
@@ -102,39 +89,76 @@ const (
 	down = 2
 	left = 3
 )
-func main() {
+func main(world, ghosts interface{}) {
 	[]interface{}{
-		42,
+		NewMem(world, ghosts),
 		step,
 	}
 }
-func step(s int) {
+func step(mem, world interface{}) {
+	split(NextMem(mem, world))
+}
+func split(mem interface{}) {
 	[]interface{}{
-		s + 1,
-		down,
+		mem,
+		Direction(mem),
 	}
+}
+func NewMem(world, ghosts interface{}) {
+	42
+}
+func NextMem(mem, world interface{}) {
+	mem + 1
+}
+func Direction(mem interface{}) {
+	mem - (mem / 4) * 4
 }
 `,
 		Out: `
-; program: lambdaman
-DUM 1 ; top-level declarations
-LDF 9 ; load step
-LDF 5 ; load main
-RAP 1 ; call main
-RTN
-
 ; main
-LDC 42
-LD 0 0 ; step
+LD 0 0 ; world
+LD 0 1 ; ghosts
+LDF 20 ; NewMem
+AP 2
+LDF 7  ; step
 CONS
 RTN
 
 ; step
-LD 0 0 ; s
+LD 0 0 ; mem
+LD 0 1 ; world
+LDF 22 ; NextMem
+AP 2
+LDF 14 ; split
+AP 1
+RTN
+
+; split
+LD 0 0 ; mem
+LD 0 0 ; mem
+LDF 26 ; Direction
+AP 1
+CONS
+RTN
+
+; NewMem
+LDC 42
+RTN
+
+; NextMem
+LD 0 0 ; mem
 LDC 1
 ADD
-LDC 2  ; down
-CONS
+RTN
+
+; Direction
+LD 0 0 ; mem
+LD 0 0 ; mem
+LDC 4
+DIV
+LDC 4
+MUL
+SUB
 RTN
 `,
 	},

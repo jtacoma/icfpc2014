@@ -27,16 +27,6 @@ func TransformGoFile(go_file *gast.File) (program *ast.Program, err error) {
 	program = &ast.Program{
 		Name: go_file.Name.Name,
 	}
-	topdecls := ast.Frame{}
-	for _, decl := range go_file.Decls {
-		switch decl := decl.(type) {
-		case *gast.FuncDecl:
-			if decl.Name.Name != "main" {
-				topdecls.Data = append(topdecls.Data,
-					ast.Datum{Name: decl.Name.Name})
-			}
-		}
-	}
 	for _, decl := range go_file.Decls {
 		switch decl := decl.(type) {
 		case *gast.FuncDecl:
@@ -126,10 +116,14 @@ func appendGoStmts(b *ast.Block, stmts []gast.Stmt) (err error) {
 
 func TransformGoExpr(block *ast.Block, expr gast.Expr) (err error) {
 	switch expr := expr.(type) {
+	default:
+		return UnsupportedTypeError{expr}
 	case *gast.BasicLit:
 		block.Add("", "LDC", expr.Value)
 	case *gast.BinaryExpr:
 		switch expr.Op {
+		default:
+			err = errors.New("unsupported operation")
 		case gtoken.ADD:
 			TransformGoExpr(block, expr.X)
 			TransformGoExpr(block, expr.Y)
@@ -172,11 +166,11 @@ func TransformGoExpr(block *ast.Block, expr gast.Expr) (err error) {
 			TransformGoExpr(block, expr.X)
 			TransformGoExpr(block, expr.Y)
 			block.Add("", "CGTE")
-		default:
-			err = errors.New("unsupported operation")
 		}
 	case *gast.CompositeLit:
 		switch expr.Type.(type) {
+		default:
+			err = errors.New("unsupported literal")
 		case *gast.ArrayType:
 			for iexpr, expr := range expr.Elts {
 				TransformGoExpr(block, expr)
@@ -185,8 +179,6 @@ func TransformGoExpr(block *ast.Block, expr gast.Expr) (err error) {
 				}
 			}
 		}
-	case *gast.Ident:
-		block.Add(expr.Name, "LD", expr.Name)
 	case *gast.CallExpr:
 		for _, arg := range expr.Args {
 			err = TransformGoExpr(block, arg)
@@ -194,8 +186,13 @@ func TransformGoExpr(block *ast.Block, expr gast.Expr) (err error) {
 				return
 			}
 		}
-		err = TransformGoExpr(block, expr.Fun)
+		name := expr.Fun.(*gast.Ident).Name
+		block.Add(name, "LDF", expr.Fun.(*gast.Ident).Name)
 		block.Add("", "AP", len(expr.Args))
+	case *gast.Ident:
+		block.Add(expr.Name, "LD", expr.Name)
+	case *gast.ParenExpr:
+		err = TransformGoExpr(block, expr.X)
 	}
 	return
 }

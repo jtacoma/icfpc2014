@@ -7,16 +7,32 @@ const (
 	left  = 3
 )
 
-func main() {
+func main(world, ghosts interface{}) {
 	[]interface{}{
-		42,
+		NewMem(world, ghosts),
 		step,
 	}
 }
 
-func step(s int) {
+func step(mem, world interface{}) {
+	split(NextMem(mem, world))
+}
+
+func split(mem interface{}) {
 	[]interface{}{
-		s + 1,
-		down,
+		mem,
+		Direction(mem),
 	}
+}
+
+func NewMem(world, ghosts interface{}) {
+	42
+}
+
+func NextMem(mem, world interface{}) {
+	mem + 1
+}
+
+func Direction(mem interface{}) {
+	mem - (mem/4)*4
 }
