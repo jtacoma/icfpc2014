@@ -34,11 +34,14 @@ func TransformGoFile(go_file *gast.File) (program *ast.Program, err error) {
 		case *gast.GenDecl:
 			switch decl.Tok {
 			case gtoken.CONST:
-				for _, spec := range decl.Specs {
-					err = TransformGoConst(
-						program,
-						spec.(*gast.ValueSpec))
+				specs := make([]*gast.ValueSpec,
+					len(decl.Specs))
+				for ispec, spec := range decl.Specs {
+					specs[ispec] = spec.(*gast.ValueSpec)
 				}
+				err = TransformGoConsts(
+					program,
+					specs)
 			}
 		}
 		if err != nil {
@@ -48,22 +51,37 @@ func TransformGoFile(go_file *gast.File) (program *ast.Program, err error) {
 	return program, nil
 }
 
-func TransformGoConst(p *ast.Program, spec *gast.ValueSpec) error {
-	for ivalue, name := range spec.Names {
-		var block ast.Block
-		err := TransformGoExpr(&block, spec.Values[ivalue])
-		if err != nil {
-			return err
-		}
-		for icmd, cmd := range block.Commands {
-			if len(cmd.Comment) == 0 {
-				block.Commands[icmd] =
-					cmd.SetComment(name.Name)
+func TransformGoConsts(p *ast.Program, specs []*gast.ValueSpec) error {
+	firstValue, ok := specs[0].Values[0].(*gast.Ident)
+	if ok && firstValue.Name == "iota" {
+		for ispec, spec := range specs {
+			for _, name := range spec.Names {
+				var block ast.Block
+				block.Add("", "LDC", ispec)
+				p.AddConst(name.Name, block.Commands)
 			}
 		}
-		err = p.AddConst(name.Name, block.Commands)
-		if err != nil {
-			return err
+
+	} else {
+		for _, spec := range specs {
+			for ivalue, name := range spec.Names {
+				var block ast.Block
+				err := TransformGoExpr(&block,
+					spec.Values[ivalue])
+				if err != nil {
+					return err
+				}
+				for icmd, cmd := range block.Commands {
+					if len(cmd.Comment) == 0 {
+						block.Commands[icmd] =
+							cmd.SetComment(name.Name)
+					}
+				}
+				err = p.AddConst(name.Name, block.Commands)
+				if err != nil {
+					return err
+				}
+			}
 		}
 	}
 	return nil
@@ -88,6 +106,11 @@ func TransformGoFunc(p *ast.Program, decl *gast.FuncDecl) error {
 func appendGoStmts(b *ast.Block, stmts []gast.Stmt) (err error) {
 	for _, stmt := range stmts {
 		switch stmt := stmt.(type) {
+		case *gast.BlockStmt:
+			err = appendGoStmts(b, stmt.List)
+			if err != nil {
+				return
+			}
 		case *gast.ExprStmt:
 			err = TransformGoExpr(b, stmt.X)
 			if err != nil {
@@ -101,7 +124,7 @@ func appendGoStmts(b *ast.Block, stmts []gast.Stmt) (err error) {
 			fbranch := b.Child("f")
 			if stmt.Else != nil {
 				appendGoStmts(fbranch,
-					stmt.Else.(*gast.BlockStmt).List)
+					[]gast.Stmt{stmt.Else})
 			}
 			fbranch.Add("", "JOIN")
 			comment := tbranch.Name() + " " + fbranch.Name()
@@ -172,12 +195,13 @@ func TransformGoExpr(block *ast.Block, expr gast.Expr) (err error) {
 		default:
 			err = errors.New("unsupported literal")
 		case *gast.ArrayType:
-			for iexpr, expr := range expr.Elts {
-				err = TransformGoExpr(block, expr)
+			for iexpr := len(expr.Elts) - 1; iexpr >= 0; iexpr -= 1 {
+				elem := expr.Elts[iexpr]
+				err = TransformGoExpr(block, elem)
 				if err != nil {
 					return
 				}
-				if iexpr > 0 {
+				if iexpr != len(expr.Elts)-1 {
 					block.Add("", "CONS")
 				}
 			}
@@ -190,12 +214,25 @@ func TransformGoExpr(block *ast.Block, expr gast.Expr) (err error) {
 			}
 		}
 		name := expr.Fun.(*gast.Ident).Name
-		block.Add(name, "LDF", expr.Fun.(*gast.Ident).Name)
-		block.Add("", "AP", len(expr.Args))
+		if _, builtin := builtins[name]; builtin {
+			block.Add("", name)
+		} else {
+			block.Add(name, "LDF", expr.Fun.(*gast.Ident).Name)
+			block.Add("", "AP", len(expr.Args))
+		}
 	case *gast.Ident:
 		block.Add(expr.Name, "LD", expr.Name)
 	case *gast.ParenExpr:
 		err = TransformGoExpr(block, expr.X)
 	}
 	return
+}
+
+var builtins = map[string]bool{
+	"ATOM": true,
+	"CAR":  true,
+	"CDR":  true,
+	"CONS": true,
+	"BRK":  true,
+	"DBUG": true,
 }
