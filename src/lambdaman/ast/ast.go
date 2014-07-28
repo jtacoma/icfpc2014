@@ -27,6 +27,7 @@ func (p *Program) Block(name string) *Block {
 	if !exists {
 		block = &Block{
 			name: name,
+			Env:  &Frame{},
 		}
 		if p.blocks == nil {
 			p.blocks = make(map[string]*Block)
@@ -98,7 +99,7 @@ func (blocks Blocks) LineNums() map[string]int {
 type Block struct {
 	name     string
 	Commands Commands
-	Env      Frame
+	Env      *Frame
 	Children []*Block
 }
 
@@ -107,9 +108,13 @@ func (b *Block) Name() string { return b.name }
 func (b *Block) ExpandTo(sequence []*Block, consts map[string][]Command) ([]*Block, error) {
 	denamed := &Block{
 		name: b.name,
+		Env:  b.Env,
 	}
 	for _, cmd := range b.Commands {
-		evaled, err := cmd.EvalNames(&b.Env, consts)
+		if len(b.Env.Data) == 0 {
+			panic(b.Name())
+		}
+		evaled, err := cmd.EvalNames(b.Env, consts)
 		if err != nil {
 			if nf, ok := err.(*NotFoundError); ok {
 				nf.BlockName = b.name
@@ -123,6 +128,9 @@ func (b *Block) ExpandTo(sequence []*Block, consts map[string][]Command) ([]*Blo
 	sequence = append(sequence, denamed)
 	for _, child := range b.Children {
 		var err error
+		if len(child.Env.Data) != len(b.Env.Data) {
+			panic("child has different frame size")
+		}
 		sequence, err = child.ExpandTo(sequence, consts)
 		if err != nil {
 			if nf, ok := err.(*NotFoundError); ok {
@@ -168,11 +176,16 @@ func (b *Block) Optimize() {
 		}
 		tname := tail.Args[0].(string)
 		fname := tail.Args[1].(string)
+		found := 0
 		for _, child := range b.Children {
 			if child.Name() == tname || child.Name() == fname {
+				found += 1
 				child.Commands[len(child.Commands)-1] =
 					child.Commands[len(child.Commands)-1].SetName(kind)
 			}
+		}
+		if found != 2 {
+			panic("found wrong number of matching branches")
 		}
 		b.Commands = b.Commands[:len(b.Commands)-1]
 		b.Commands[len(b.Commands)-1] = tail
@@ -213,8 +226,7 @@ func (b *Block) WriteTo(w io.Writer, lineNums map[string]int) (err error) {
 }
 
 type Datum struct {
-	Name  string
-	Value interface{}
+	Name string
 }
 
 type Data []Datum
@@ -275,7 +287,10 @@ func (c Command) EvalNames(f *Frame, consts map[string][]Command) ([]Command, er
 				cmds, found = consts[name]
 				if !found {
 					return nil,
-						&NotFoundError{VarName: name}
+						&NotFoundError{
+							VarName: name,
+							frame:   f,
+						}
 				}
 			} else {
 				c.Args = []interface{}{iframe, idatum}
@@ -297,10 +312,12 @@ func (c Command) EvalLineNums(lineNums map[string]int) (Command, error) {
 	var ok bool
 	switch c.Name {
 	case "LDF":
-		name := c.Args[0].(string)
-		c.Args[0], ok = lineNums[name]
-		if !ok {
-			return c, &NotFoundError{VarName: name}
+		name, ok := c.Args[0].(string)
+		if ok {
+			c.Args[0], ok = lineNums[name]
+			if !ok {
+				return c, &NotFoundError{VarName: name}
+			}
 		}
 	case "SEL", "TSEL":
 		name := c.Args[0].(string)
